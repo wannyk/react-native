@@ -8,13 +8,12 @@
  */
 
 #import "RCTWebSocketModule.h"
+#import "RCTSRWebSocket.h"
 
 #import <objc/runtime.h>
 
 #import <React/RCTConvert.h>
 #import <React/RCTUtils.h>
-
-#import "RCTSRWebSocket.h"
 
 @implementation RCTSRWebSocket (React)
 
@@ -37,7 +36,7 @@
 @implementation RCTWebSocketModule
 {
   NSMutableDictionary<NSNumber *, RCTSRWebSocket *> *_sockets;
-  NSMutableDictionary<NSNumber *, id> *_contentHandlers;
+  NSMutableDictionary<NSNumber *, id<RCTWebSocketContentHandler>> *_contentHandlers;
 }
 
 RCT_EXPORT_MODULE()
@@ -53,15 +52,16 @@ RCT_EXPORT_MODULE()
            @"websocketClosed"];
 }
 
-- (void)dealloc
+- (void)invalidate
 {
+  _contentHandlers = nil;
   for (RCTSRWebSocket *socket in _sockets.allValues) {
     socket.delegate = nil;
     [socket close];
   }
 }
 
-RCT_EXPORT_METHOD(connect:(NSURL *)URL protocols:(NSArray *)protocols headers:(NSDictionary *)headers socketID:(nonnull NSNumber *)socketID)
+RCT_EXPORT_METHOD(connect:(NSURL *)URL protocols:(NSArray *)protocols options:(NSDictionary *)options socketID:(nonnull NSNumber *)socketID)
 {
   NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:URL];
 
@@ -78,7 +78,7 @@ RCT_EXPORT_METHOD(connect:(NSURL *)URL protocols:(NSArray *)protocols headers:(N
   request.allHTTPHeaderFields = [NSHTTPCookie requestHeaderFieldsWithCookies:cookies];
 
   // Load supplied headers
-  [headers enumerateKeysAndObjectsUsingBlock:^(NSString *key, id value, BOOL *stop) {
+  [options[@"headers"] enumerateKeysAndObjectsUsingBlock:^(NSString *key, id value, BOOL *stop) {
     [request addValue:[RCTConvert NSString:value] forHTTPHeaderField:key];
   }];
 
@@ -135,7 +135,7 @@ RCT_EXPORT_METHOD(close:(nonnull NSNumber *)socketID)
   NSNumber *socketID = [webSocket reactTag];
   id contentHandler = _contentHandlers[socketID];
   if (contentHandler) {
-    message = [contentHandler processMessage:message forSocketID:socketID withType:&type];
+    message = [contentHandler processWebsocketMessage:message forSocketID:socketID withType:&type];
   } else {
     if ([message isKindOfClass:[NSData class]]) {
       type = @"binary";

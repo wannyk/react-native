@@ -30,6 +30,7 @@ import com.facebook.react.module.model.ReactModuleInfoProvider;
 import com.facebook.react.modules.accessibilityinfo.AccessibilityInfoModule;
 import com.facebook.react.modules.appstate.AppStateModule;
 import com.facebook.react.modules.blob.BlobModule;
+import com.facebook.react.modules.blob.FileReaderModule;
 import com.facebook.react.modules.camera.CameraRollManager;
 import com.facebook.react.modules.camera.ImageEditingManager;
 import com.facebook.react.modules.camera.ImageStoreManager;
@@ -54,6 +55,7 @@ import com.facebook.react.modules.websocket.WebSocketModule;
 import com.facebook.react.uimanager.ViewManager;
 import com.facebook.react.views.art.ARTRenderableViewManager;
 import com.facebook.react.views.art.ARTSurfaceViewManager;
+import com.facebook.react.views.checkbox.ReactCheckBoxManager;
 import com.facebook.react.views.drawer.ReactDrawerLayoutManager;
 import com.facebook.react.views.image.ReactImageManager;
 import com.facebook.react.views.modal.ReactModalHostManager;
@@ -121,6 +123,14 @@ public class MainReactPackage extends LazyReactPackage {
               @Override
               public NativeModule get() {
                 return new BlobModule(context);
+              }
+            }),
+        new ModuleSpec(
+            FileReaderModule.class,
+            new Provider<NativeModule>() {
+              @Override
+              public NativeModule get() {
+                return new FileReaderModule(context);
               }
             }),
         new ModuleSpec(
@@ -309,6 +319,7 @@ public class MainReactPackage extends LazyReactPackage {
     viewManagers.add(ARTRenderableViewManager.createARTGroupViewManager());
     viewManagers.add(ARTRenderableViewManager.createARTShapeViewManager());
     viewManagers.add(ARTRenderableViewManager.createARTTextViewManager());
+    viewManagers.add(new ReactCheckBoxManager());
     viewManagers.add(new ReactDialogPickerManager());
     viewManagers.add(new ReactDrawerLayoutManager());
     viewManagers.add(new ReactDropdownPickerManager());
