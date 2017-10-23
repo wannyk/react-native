@@ -14,10 +14,14 @@
 const Blob = require('Blob');
 const EventTarget = require('event-target-shim');
 const NativeEventEmitter = require('NativeEventEmitter');
+const BlobManager = require('BlobManager');
 const NativeModules = require('NativeModules');
 const Platform = require('Platform');
 const WebSocketEvent = require('WebSocketEvent');
 
+/* $FlowFixMe(>=0.54.0 site=react_native_oss) This comment suppresses an error
+ * found when Flow v0.54 was deployed. To see the error delete this comment and
+ * run Flow. */
 const base64 = require('base64-js');
 const binaryToBase64 = require('binaryToBase64');
 const invariant = require('fbjs/lib/invariant');
@@ -93,10 +97,31 @@ class WebSocket extends EventTarget(...WEBSOCKET_EVENTS) {
   // `WebSocket.isAvailable` will return `false`, and WebSocket constructor will throw an error
   static isAvailable: boolean = !!WebSocketModule;
 
-  constructor(url: string, protocols: ?string | ?Array<string>, options: ?{origin?: string}) {
+  constructor(url: string, protocols: ?string | ?Array<string>, options: ?{headers?: {origin?: string}}) {
     super();
     if (typeof protocols === 'string') {
       protocols = [protocols];
+    }
+
+    const {headers = {}, ...unrecognized} = options || {};
+
+    // Preserve deprecated backwards compatibility for the 'origin' option
+    if (unrecognized && typeof unrecognized.origin === 'string') {
+      console.warn('Specifying `origin` as a WebSocket connection option is deprecated. Include it under `headers` instead.');
+      /* $FlowFixMe(>=0.54.0 site=react_native_fb,react_native_oss) This
+       * comment suppresses an error found when Flow v0.54 was deployed. To see
+       * the error delete this comment and run Flow. */
+      headers.origin = unrecognized.origin;
+      /* $FlowFixMe(>=0.54.0 site=react_native_fb,react_native_oss) This
+       * comment suppresses an error found when Flow v0.54 was deployed. To see
+       * the error delete this comment and run Flow. */
+      delete unrecognized.origin;
+    }
+
+    // Warn about and discard anything else
+    if (Object.keys(unrecognized).length > 0) {
+      console.warn('Unrecognized WebSocket connection option(s) `' + Object.keys(unrecognized).join('`, `') + '`. '
+        + 'Did you mean to put these under `headers`?');
     }
 
     if (!Array.isArray(protocols)) {
@@ -111,7 +136,7 @@ class WebSocket extends EventTarget(...WEBSOCKET_EVENTS) {
     this._eventEmitter = new NativeEventEmitter(WebSocketModule);
     this._socketId = nextWebSocketId++;
     this._registerEvents();
-    WebSocketModule.connect(url, protocols, options, this._socketId);
+    WebSocketModule.connect(url, protocols, { headers }, this._socketId);
   }
 
   get binaryType(): ?BinaryType {
@@ -123,17 +148,18 @@ class WebSocket extends EventTarget(...WEBSOCKET_EVENTS) {
       throw new Error('binaryType must be either \'blob\' or \'arraybuffer\'');
     }
     if (this._binaryType === 'blob' || binaryType === 'blob') {
-      const BlobModule = NativeModules.BlobModule;
-      invariant(BlobModule, 'Native module BlobModule is required for blob support');
-      if (BlobModule) {
-        if (binaryType === 'blob') {
-          BlobModule.enableBlobSupport(this._socketId);
-        } else {
-          BlobModule.disableBlobSupport(this._socketId);
-        }
+      invariant(BlobManager.isAvailable, 'Native module BlobModule is required for blob support');
+      if (binaryType === 'blob') {
+        BlobManager.addWebSocketHandler(this._socketId);
+      } else {
+        BlobManager.removeWebSocketHandler(this._socketId);
       }
     }
     this._binaryType = binaryType;
+  }
+
+  get binaryType(): ?BinaryType {
+    return this._binaryType;
   }
 
   close(code?: number, reason?: string): void {
@@ -152,9 +178,8 @@ class WebSocket extends EventTarget(...WEBSOCKET_EVENTS) {
     }
 
     if (data instanceof Blob) {
-      const BlobModule = NativeModules.BlobModule;
-      invariant(BlobModule, 'Native module BlobModule is required for blob support');
-      BlobModule.sendBlob(data, this._socketId);
+      invariant(BlobManager.isAvailable, 'Native module BlobModule is required for blob support');
+      BlobManager.sendOverSocket(data, this._socketId);
       return;
     }
 
@@ -188,6 +213,10 @@ class WebSocket extends EventTarget(...WEBSOCKET_EVENTS) {
     } else {
       WebSocketModule.close(this._socketId);
     }
+
+    if (BlobManager.isAvailable && this._binaryType === 'blob') {
+      BlobManager.removeWebSocketHandler(this._socketId);
+    }
   }
 
   _unregisterEvents(): void {
@@ -207,7 +236,7 @@ class WebSocket extends EventTarget(...WEBSOCKET_EVENTS) {
             data = base64.toByteArray(ev.data).buffer;
             break;
           case 'blob':
-            data = Blob.create(ev.data);
+            data = BlobManager.createFromOptions(ev.data);
             break;
         }
         this.dispatchEvent(new WebSocketEvent('message', { data }));
